@@ -15,15 +15,16 @@ def capture_timestamp(value):
     """
     Convert a capture timestamp into Unix seconds.
 
-    Important:
-    Numeric timestamps are already Unix seconds and must NOT be passed
-    through pd.to_datetime(), because pandas interprets bare integers as
-    nanoseconds by default.
+    Numeric timestamps are already Unix seconds and must not be passed
+    through pd.to_datetime(), because pandas interprets bare integers
+    as nanoseconds by default.
     """
+
     if value is None:
         return time.time()
 
     if isinstance(value, (int, float, np.integer, np.floating)):
+
         value = float(value)
 
         if np.isfinite(value):
@@ -33,6 +34,7 @@ def capture_timestamp(value):
 
     try:
         return pd.Timestamp(value).timestamp()
+
     except Exception:
         return time.time()
 
@@ -45,6 +47,7 @@ class PortScanDetector:
         minimum_unique_ports=10,
         cooldown_seconds=10.0
     ):
+
         self.window_seconds = float(window_seconds)
         self.minimum_unique_ports = int(minimum_unique_ports)
         self.cooldown_seconds = float(cooldown_seconds)
@@ -58,17 +61,26 @@ class PortScanDetector:
         destination = features.get("dst_ip")
         destination_port = features.get("dst_port")
 
-        if not source or not destination or destination_port is None:
+        if not source or not destination:
+            return None
+
+        if destination_port is None:
             return None
 
         try:
             destination_port = int(destination_port)
+
         except (TypeError, ValueError):
             return None
 
-        now = capture_timestamp(features.get("capture_ts"))
+        now = capture_timestamp(
+            features.get("capture_ts")
+        )
 
-        key = (str(source), str(destination))
+        key = (
+            str(source),
+            str(destination)
+        )
 
         self.connections[key].append(
             {
@@ -81,8 +93,10 @@ class PortScanDetector:
 
         while (
             self.connections[key]
-            and self.connections[key][0]["time"] < cutoff
+            and
+            self.connections[key][0]["time"] < cutoff
         ):
+
             self.connections[key].popleft()
 
         flows = self.connections[key]
@@ -97,28 +111,44 @@ class PortScanDetector:
         connections = len(flows)
 
         if flows:
+
             elapsed = max(
                 now - flows[0]["time"],
                 0.001
             )
+
         else:
+
             elapsed = 0.001
 
-        scan_rate = connections / elapsed
+        scan_rate = (
+            connections /
+            elapsed
+        )
 
         detected = (
-            unique_ports >= self.minimum_unique_ports
+            unique_ports >=
+            self.minimum_unique_ports
         )
 
         suppressed = False
 
         if detected:
 
-            last_alert = self.last_alert.get(key, 0.0)
+            last_alert = self.last_alert.get(
+                key,
+                0.0
+            )
 
-            if now - last_alert < self.cooldown_seconds:
+            if (
+                now - last_alert
+                < self.cooldown_seconds
+            ):
+
                 suppressed = True
+
             else:
+
                 self.last_alert[key] = now
 
         return {
@@ -144,28 +174,60 @@ class SYNFloodDetector:
         cooldown_seconds=10.0
     ):
 
-        self.window_seconds = float(window_seconds)
-        self.minimum_syn_packets = int(minimum_syn_packets)
-        self.minimum_syn_flows = int(minimum_syn_flows)
-        self.minimum_syn_rate = float(minimum_syn_rate)
-        self.maximum_ack_ratio = float(maximum_ack_ratio)
-        self.cooldown_seconds = float(cooldown_seconds)
+        self.window_seconds = float(
+            window_seconds
+        )
 
-        self.connections = defaultdict(deque)
+        self.minimum_syn_packets = int(
+            minimum_syn_packets
+        )
+
+        self.minimum_syn_flows = int(
+            minimum_syn_flows
+        )
+
+        self.minimum_syn_rate = float(
+            minimum_syn_rate
+        )
+
+        self.maximum_ack_ratio = float(
+            maximum_ack_ratio
+        )
+
+        self.cooldown_seconds = float(
+            cooldown_seconds
+        )
+
+        self.connections = defaultdict(
+            deque
+        )
+
         self.last_alert = {}
 
     @staticmethod
-    def number(features, name, default=0.0):
+    def number(
+        features,
+        name,
+        default=0.0
+    ):
 
         try:
+
             value = float(
-                features.get(name, default)
+                features.get(
+                    name,
+                    default
+                )
             )
 
             if np.isfinite(value):
                 return value
 
-        except (TypeError, ValueError):
+        except (
+            TypeError,
+            ValueError
+        ):
+
             pass
 
         return default
@@ -179,10 +241,19 @@ class SYNFloodDetector:
             return None
 
         try:
+
             protocol = int(
-                features.get("protocol", 0)
+                features.get(
+                    "protocol",
+                    0
+                )
             )
-        except (TypeError, ValueError):
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
             protocol = 0
 
         # TCP only
@@ -237,12 +308,18 @@ class SYNFloodDetector:
             }
         )
 
-        cutoff = now - self.window_seconds
+        cutoff = (
+            now -
+            self.window_seconds
+        )
 
         while (
             self.connections[key]
-            and self.connections[key][0]["time"] < cutoff
+            and
+            self.connections[key][0]["time"]
+            < cutoff
         ):
+
             self.connections[key].popleft()
 
         observations = self.connections[key]
@@ -272,16 +349,20 @@ class SYNFloodDetector:
             for item in observations
         )
 
-        syn_flows = len(observations)
+        syn_flows = len(
+            observations
+        )
 
         if observations:
 
             elapsed = max(
-                now - observations[0]["time"],
+                now -
+                observations[0]["time"],
                 0.1
             )
 
         else:
+
             elapsed = 0.1
 
         elapsed = min(
@@ -290,39 +371,58 @@ class SYNFloodDetector:
         )
 
         syn_rate = (
-            total_syn / elapsed
+            total_syn /
+            elapsed
         )
 
         ack_ratio = (
             total_ack /
-            max(total_syn + total_ack, 1.0)
+            max(
+                total_syn +
+                total_ack,
+                1.0
+            )
         )
 
         syn_ratio = (
             total_syn /
-            max(total_syn + total_ack, 1.0)
+            max(
+                total_syn +
+                total_ack,
+                1.0
+            )
         )
 
         one_way_connections = sum(
             1
             for item in observations
-            if item["syn"] > 0
-            and item["bwd"] <= 0
+            if (
+                item["syn"] > 0
+                and
+                item["bwd"] <= 0
+            )
         )
 
         one_way_ratio = (
             one_way_connections /
-            max(syn_flows, 1)
+            max(
+                syn_flows,
+                1
+            )
         )
 
         detected = (
-            total_syn >= self.minimum_syn_packets
+            total_syn >=
+            self.minimum_syn_packets
             and
-            syn_flows >= self.minimum_syn_flows
+            syn_flows >=
+            self.minimum_syn_flows
             and
-            syn_rate >= self.minimum_syn_rate
+            syn_rate >=
+            self.minimum_syn_rate
             and
-            ack_ratio <= self.maximum_ack_ratio
+            ack_ratio <=
+            self.maximum_ack_ratio
             and
             one_way_ratio >= 0.70
         )
@@ -338,10 +438,14 @@ class SYNFloodDetector:
 
             if (
                 now - last_alert
-                < self.cooldown_seconds
+                <
+                self.cooldown_seconds
             ):
+
                 suppressed = True
+
             else:
+
                 self.last_alert[key] = now
 
         return {
@@ -384,24 +488,22 @@ class LiveInference:
                 self.model_path
             )
 
-        self.dashboard_bridge = (
-            dashboard_bridge
-        )
-
         print()
         print("=" * 60)
-        print("XAI-IDS - Live Machine Learning Inference")
+        print(
+            "XAI-IDS - Live Machine Learning Inference"
+        )
         print("=" * 60)
 
         print(
-            f"[ML] Loading model: "
+            "[ML] Loading model: "
             f"{self.model_path}"
         )
 
         if not self.model_path.exists():
 
             raise FileNotFoundError(
-                f"Model not found: "
+                "Model not found: "
                 f"{self.model_path}"
             )
 
@@ -448,17 +550,17 @@ class LiveInference:
             )
 
         print(
-            f"[ML] Model type: "
+            "[ML] Model type: "
             f"{type(self.model).__name__}"
         )
 
         print(
-            f"[ML] Features: "
+            "[ML] Features: "
             f"{len(self.features)}"
         )
 
         print(
-            f"[ML] Classes: "
+            "[ML] Classes: "
             f"{list(self.model.classes_)}"
         )
 
@@ -481,7 +583,7 @@ class LiveInference:
         except Exception as error:
 
             print(
-                f"[XAI] SHAP unavailable: "
+                "[XAI] SHAP unavailable: "
                 f"{error}"
             )
 
@@ -491,6 +593,10 @@ class LiveInference:
 
         self.syn_flood_detector = (
             SYNFloodDetector()
+        )
+
+        self.dashboard_bridge = (
+            dashboard_bridge
         )
 
         print(
@@ -580,8 +686,9 @@ class LiveInference:
 
         try:
 
-            raw = self.explainer.shap_values(
-                X
+            raw = (
+                self.explainer
+                .shap_values(X)
             )
 
             classes = list(
@@ -626,7 +733,9 @@ class LiveInference:
 
                 else:
 
-                    values = values.reshape(-1)
+                    values = values.reshape(
+                        -1
+                    )
 
             result = {}
 
@@ -653,7 +762,7 @@ class LiveInference:
         except Exception as error:
 
             print(
-                f"[XAI] Explanation failed: "
+                "[XAI] Explanation failed: "
                 f"{error}"
             )
 
@@ -664,13 +773,22 @@ class LiveInference:
         port_result,
         dos_result
     ):
+        """
+        Behavioural detection determines the security decision.
+
+        Important:
+        The 'suppressed' flag only prevents repeated alert messages.
+        It must NOT turn an already detected attack back into Benign.
+
+        Therefore:
+            detected=True, suppressed=True
+        still returns the corresponding attack class.
+        """
 
         if (
             dos_result
             and
             dos_result.get("detected")
-            and
-            not dos_result.get("suppressed")
         ):
 
             return "DoS"
@@ -679,8 +797,6 @@ class LiveInference:
             port_result
             and
             port_result.get("detected")
-            and
-            not port_result.get("suppressed")
         ):
 
             return "Port Scan"
@@ -730,7 +846,10 @@ class LiveInference:
                 )
             )
 
-            if behavioural_detection == "DoS":
+            if (
+                behavioural_detection
+                == "DoS"
+            ):
 
                 final_decision = "DoS"
 
@@ -799,28 +918,29 @@ class LiveInference:
                 )
 
                 print(
-                    f"        Source       : "
+                    "        Source       : "
                     f"{port_result['source']}"
                 )
 
                 print(
-                    f"        Destination  : "
+                    "        Destination  : "
                     f"{port_result['destination']}"
                 )
 
                 print(
-                    f"        Unique ports : "
+                    "        Unique ports : "
                     f"{port_result['unique_ports']}"
                 )
 
                 print(
-                    f"        Connections   : "
+                    "        Connections   : "
                     f"{port_result['connections']}"
                 )
 
                 print(
-                    f"        Scan rate    : "
-                    f"{port_result['scan_rate']:.2f} flows/sec"
+                    "        Scan rate    : "
+                    f"{port_result['scan_rate']:.2f} "
+                    "flows/sec"
                 )
 
             if (
@@ -837,42 +957,43 @@ class LiveInference:
                 )
 
                 print(
-                    f"        Source       : "
+                    "        Source       : "
                     f"{dos_result['source']}"
                 )
 
                 print(
-                    f"        Destination  : "
+                    "        Destination  : "
                     f"{dos_result['destination']}"
                 )
 
                 print(
-                    f"        SYN packets  : "
+                    "        SYN packets  : "
                     f"{dos_result['syn_packets']:.0f}"
                 )
 
                 print(
-                    f"        SYN flows    : "
+                    "        SYN flows    : "
                     f"{dos_result['syn_flows']}"
                 )
 
                 print(
-                    f"        SYN rate     : "
-                    f"{dos_result['syn_rate']:.2f} SYN/sec"
+                    "        SYN rate     : "
+                    f"{dos_result['syn_rate']:.2f} "
+                    "SYN/sec"
                 )
 
                 print(
-                    f"        SYN ratio    : "
+                    "        SYN ratio    : "
                     f"{dos_result['syn_ratio'] * 100:.2f}%"
                 )
 
                 print(
-                    f"        ACK packets  : "
+                    "        ACK packets  : "
                     f"{dos_result['ack_packets']:.0f}"
                 )
 
                 print(
-                    f"        ACK ratio    : "
+                    "        ACK ratio    : "
                     f"{dos_result['ack_ratio'] * 100:.2f}%"
                 )
 
@@ -966,10 +1087,13 @@ if __name__ == "__main__":
     )
 
     print()
+
     print(
         "Run the project from the root "
         "directory."
     )
+
+    print()
 
     print(
         "Example:"
