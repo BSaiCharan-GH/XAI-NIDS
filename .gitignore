@@ -1,0 +1,51 @@
+# ==============================
+# Python virtual environment
+# ==============================
+.venv/
+venv/
+env/
+
+# ==============================
+# Python cache
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ==============================
+# Large datasets
+# ==============================
+datasets/CICIDS2017/
+datasets/processed/*.csv
+
+# ==============================
+# Live packet captures
+# ==============================
+capture_*.csv
+captures/
+*.pcap
+*.pcapng
+
+# ==============================
+# Generated evaluation files
+# ==============================
+reports/evaluation_predictions.csv
+reports/confusion_matrix.csv
+reports/classification_report.csv
+
+# ==============================
+# Temporary files
+# ==============================
+*.tmp
+*.log
+
+# ==============================
+# Environment / secrets
+# ==============================
+.env
+.env.*
+
+# ==============================
+# VS Code
+# ==============================
+.vscode/
