@@ -117,8 +117,18 @@ lock = threading.Lock()
 
 REQUESTS_LOG = deque(maxlen=2000)  # (timestamp,) of every relayed event, for server-wide rate
 PACKET_LOG = deque(maxlen=500)  # application-level Socket.IO traffic metadata
+ATTACK_SPIKE_HISTORY = deque(maxlen=300)  # demo/real traffic timestamps used for live graph spikes
 PACKET_SEQUENCE = 0
 live_capture = None
+
+
+def _capture_event_times():
+    times = []
+    if live_capture is not None:
+        with live_capture.lock:
+            times.extend(float(t) for t in live_capture.capture_history)
+    times.extend(float(t) for t in ATTACK_SPIKE_HISTORY)
+    return times
 
 
 # ------------------------------------------------------------- routes -----
@@ -287,11 +297,7 @@ def api_detection_history():
 def api_traffic_graph():
     now = time.time()
     entries = []
-    if live_capture is not None:
-        with live_capture.lock:
-            capture_times = list(live_capture.capture_history)
-    else:
-        capture_times = []
+    capture_times = _capture_event_times()
     for offset in range(60):
         stamp = now - offset
         bucket = int(stamp)
@@ -483,6 +489,7 @@ def on_start_packet_test(data):
             except ValueError:
                 continue
         result = attack_generator.start(kind, target=target, ports=raw_ports)
+        ATTACK_SPIKE_HISTORY.extend([time.time() - offset for offset in range(12)])
         emit("packet_test_status", {"running": True, **result})
     except (TypeError, ValueError, RuntimeError) as exc:
         emit("packet_test_status", {"running": False, "error": str(exc)})
@@ -502,6 +509,7 @@ def publish_live_alert(report):
     report.setdefault("source", report.get("source_ip", "live-capture"))
     report.setdefault("destination", report.get("destination_ip", "network"))
     report["explanation"] = generate_attack_explanation(report)
+    ATTACK_SPIKE_HISTORY.extend([time.time()] * 12)
     with lock:
         alerts.appendleft(report)
     persist_detection(report)
@@ -758,11 +766,7 @@ def api_report_pdf():
 @app.route("/api/health_series")
 def api_health_series():
     now = time.time()
-    if live_capture is not None:
-        with live_capture.lock:
-            capture_times = list(live_capture.capture_history)
-    else:
-        capture_times = []
+    capture_times = _capture_event_times()
     buckets = defaultdict(int)
     for t in capture_times:
         age = max(0, int(now - float(t)))
