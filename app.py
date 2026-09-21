@@ -287,14 +287,21 @@ def api_detection_history():
 def api_traffic_graph():
     now = time.time()
     entries = []
+    if live_capture is not None:
+        with live_capture.lock:
+            capture_times = list(live_capture.capture_history)
+    else:
+        capture_times = []
     for offset in range(60):
         stamp = now - offset
         bucket = int(stamp)
         traffic = 0
         attacks = 0
         with lock:
-            traffic = sum(1 for t in REQUESTS_LOG if bucket <= int(t) <= bucket + 1)
             attacks = sum(1 for alert in alerts if int(alert.get("ts") or 0) == bucket)
+        for t in capture_times:
+            if bucket <= int(float(t)) <= bucket + 1:
+                traffic += 1
         entries.append({
             "time": bucket,
             "label": time.strftime("%H:%M:%S", time.localtime(stamp)),
@@ -751,11 +758,16 @@ def api_report_pdf():
 @app.route("/api/health_series")
 def api_health_series():
     now = time.time()
-    with lock:
-        buckets = defaultdict(int)
-        for t in REQUESTS_LOG:
-            if now - t < 30:
-                buckets[int(now - t)] += 1
+    if live_capture is not None:
+        with live_capture.lock:
+            capture_times = list(live_capture.capture_history)
+    else:
+        capture_times = []
+    buckets = defaultdict(int)
+    for t in capture_times:
+        age = max(0, int(now - float(t)))
+        if age < 30:
+            buckets[age] += 1
     series = [buckets.get(i, 0) for i in range(29, -1, -1)]
     return jsonify({"series": series})
 

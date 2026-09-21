@@ -155,12 +155,13 @@ CLASS_NAMES = ("BENIGN", "DoS", "PortScan")
 LEGACY_FEATURE_ALIASES = {
     "destination_port": ("destination_port",),
     "flow_duration": ("flow_duration", "flow_duration_us"),
-    "total_fwd_packets": ("total_fwd_packets",),
+    "total_fwd_packets": ("total_fwd_packets", "fwd_packets", "total_forward_packets"),
     "total_backward_packets": ("total_backward_packets", "total_bwd_packets"),
     "total_length_of_fwd_packets": ("total_length_of_fwd_packets",),
     "total_length_of_bwd_packets": ("total_length_of_bwd_packets",),
-    "flow_bytes_per_s": ("flow_bytes_per_s",),
-    "flow_packets_per_s": ("flow_packets_per_s",),
+    "flow_bytes_per_s": ("flow_bytes_per_s", "flow_bytes_s"),
+    "flow_packets_s": ("flow_packets_s", "flow_packets_per_s", "flow_packets_per_sec"),
+    "flow_packets_per_s": ("flow_packets_s", "flow_packets_per_s", "flow_packets_per_sec"),
     "syn_flag_count": ("syn_flag_count",),
     "rst_flag_count": ("rst_flag_count",),
     "flow_iat_mean": ("flow_iat_mean",),
@@ -327,13 +328,15 @@ class AnomalyDetector:
         vector = {}
         for name in FEATURE_NAMES:
             value = None
-            for candidate in {name, *LEGACY_FEATURE_ALIASES.get(name, ())}:
+            alias_candidates = {name, *LEGACY_FEATURE_ALIASES.get(name, ())}
+            for candidate in alias_candidates:
                 if candidate in normalized and normalized[candidate] is not None:
                     value = normalized[candidate]
                     break
             if value is None:
                 for key, entry in normalized.items():
-                    if _normalize_friendly_name(key) == name:
+                    normalized_key = _normalize_friendly_name(key)
+                    if normalized_key == name or normalized_key in alias_candidates:
                         value = entry
                         break
             vector[name] = float(value if value is not None else 0.0)
@@ -378,13 +381,31 @@ class AnomalyDetector:
         """Combine the trained CICIDS model with conservative live-flow safeguards."""
         payload = self.build_feature_vector(features)
         label, probability, shap_values = self.predict(payload)
-        packet_rate = float(payload.get("flow_packets_per_s", 0.0) or 0.0)
-        if distinct_ports >= 8:
-            return "PortScan", max(probability, 0.85), shap_values
-        if label == "DoS" or source_syn_count >= 50 or (
-            packet_rate >= 50 and float(payload.get("total_fwd_packets", 0.0) or 0.0) >= 50
-        ):
+
+        packet_rate = 0.0
+        for key in ("flow_packets_per_s", "flow_packets_s", "flow_packets_per_sec"):
+            value = payload.get(key)
+            if value is not None:
+                packet_rate = float(value)
+                break
+
+        total_fwd_packets = 0.0
+        for key in ("total_fwd_packets", "total_forward_packets", "fwd_packets"):
+            value = payload.get(key)
+            if value is not None:
+                total_fwd_packets = float(value)
+                break
+
+        strong_dos_evidence = (
+            label == "DoS"
+            or source_syn_count >= 8
+            or (packet_rate >= 12 and total_fwd_packets >= 10)
+            or (packet_rate >= 5 and total_fwd_packets >= 20 and distinct_ports <= 2)
+        )
+        if strong_dos_evidence:
             return "DoS", max(probability, 0.85), shap_values
+        if distinct_ports >= 4:
+            return "PortScan", max(probability, 0.85), shap_values
         return label, probability, shap_values
 
     def evaluate_model(self, save_dir=None):

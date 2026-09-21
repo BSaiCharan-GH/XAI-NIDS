@@ -39,6 +39,7 @@ class LivePacketCapture:
         self.scan_ports = defaultdict(deque)
         self.syn_windows = defaultdict(deque)
         self.last_alert = {}
+        self.capture_history = deque(maxlen=300)
         self.lock = threading.Lock()
 
     @staticmethod
@@ -102,6 +103,7 @@ class LivePacketCapture:
             now = time.time()
             with self.lock:
                 self.packet_count += 1
+                self.capture_history.append(now)
                 flow = self.flows[key]
                 flow["first"] = flow["first"] or now
                 flow["last"] = now
